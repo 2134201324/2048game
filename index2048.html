@@ -1,0 +1,1231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>2048</title>
+  <style>
+    /* =============================================
+       CSS RESET & BASE
+       ============================================= */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #faf8ef;
+      font-family: "Clear Sans", "Helvetica Neue", Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      min-height: 100vh;
+      padding: 20px 16px 60px;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    /* =============================================
+       HEADER
+       ============================================= */
+    .header {
+      width: 100%;
+      max-width: 500px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      font-size: clamp(44px, 11vw, 70px);
+      font-weight: 900;
+      color: #776e65;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+
+    .header-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 8px;
+    }
+
+    .scores-container {
+      display: flex;
+      gap: 8px;
+    }
+
+    .score-box {
+      background: #bbada0;
+      border-radius: 6px;
+      padding: 6px 14px;
+      text-align: center;
+      min-width: 76px;
+    }
+
+    .score-label {
+      color: #eee4da;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    /* Wrapper for score + floating addition */
+    .score-value-wrap {
+      position: relative;
+      height: 28px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .score-value {
+      color: #fff;
+      font-size: 20px;
+      font-weight: 700;
+      line-height: 1;
+    }
+
+    /* Floating +N animation that pops up from score */
+    .score-add {
+      position: absolute;
+      top: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+      color: #776e65;
+      font-size: 14px;
+      font-weight: 700;
+      white-space: nowrap;
+      pointer-events: none;
+      animation: floatUp 0.65s ease-out forwards;
+    }
+
+    @keyframes floatUp {
+      0%   { opacity: 1; transform: translateX(-50%) translateY(0); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-28px); }
+    }
+
+    .buttons-container {
+      display: flex;
+      gap: 8px;
+    }
+
+    .btn {
+      background: #8f7a66;
+      color: #f9f6f2;
+      border: none;
+      border-radius: 6px;
+      padding: 8px 13px;
+      font-size: 14px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+      font-family: inherit;
+      white-space: nowrap;
+      line-height: 1;
+    }
+
+    .btn:hover  { background: #a08870; }
+    .btn:active { background: #7a6958; }
+
+    .btn:disabled {
+      opacity: 0.45;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    /* =============================================
+       SUBTITLE
+       ============================================= */
+    .subtitle {
+      width: 100%;
+      max-width: 500px;
+      color: #776e65;
+      font-size: 13px;
+      margin-bottom: 16px;
+    }
+
+    /* =============================================
+       BOARD WRAPPER
+       ============================================= */
+    .board-wrapper {
+      position: relative;
+      width: 100%;
+      max-width: 500px;
+    }
+
+    /* =============================================
+       GAME BOARD
+       ============================================= */
+    .board {
+      background: #bbada0;
+      border-radius: 8px;
+      padding: 12px;
+      position: relative;
+      width: 100%;
+      aspect-ratio: 1 / 1;
+      touch-action: none;
+    }
+
+    /* Ghost background cells */
+    .cell-grid {
+      position: absolute;
+      inset: 12px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      grid-template-rows: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .ghost-cell {
+      background: rgba(238, 228, 218, 0.35);
+      border-radius: 6px;
+    }
+
+    /* Tile container — tiles positioned absolutely inside */
+    .tile-container {
+      position: absolute;
+      inset: 12px;
+    }
+
+    /* =============================================
+       TILES
+       ============================================= */
+    .tile {
+      position: absolute;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      line-height: 1;
+      /* Movement transition: only transform is animated */
+      transition: transform 200ms cubic-bezier(0.25, 0.1, 0.25, 1);
+      /* Create compositing layer up front */
+      will-change: transform;
+      /* Use translate3d to keep GPU-only compositing */
+      transform: translate3d(0, 0, 0);
+    }
+
+    /* New tile appear */
+    @keyframes tileAppear {
+      0%   { opacity: 0; transform: scale(0.4) translate3d(0,0,0); }
+      70%  { opacity: 1; transform: scale(1.08) translate3d(0,0,0); }
+      100% { opacity: 1; transform: scale(1) translate3d(0,0,0); }
+    }
+
+    /* Merge pop effect */
+    @keyframes tilePop {
+      0%   { transform: scale(1) translate3d(0,0,0); }
+      45%  { transform: scale(1.18) translate3d(0,0,0); }
+      100% { transform: scale(1) translate3d(0,0,0); }
+    }
+
+    .tile-new {
+      /* Override the movement transition for appear animation */
+      transition: none;
+      animation: tileAppear 200ms cubic-bezier(0.25, 0.1, 0.25, 1) both;
+    }
+
+    .tile-pop {
+      /* Override transition for pop — applied after move transitions end */
+      transition: none;
+      animation: tilePop 150ms ease-in-out both;
+    }
+
+    /* =============================================
+       TILE COLORS
+       ============================================= */
+    .tile[data-value="2"]    { background: #eee4da; color: #776e65; }
+    .tile[data-value="4"]    { background: #ede0c8; color: #776e65; }
+    .tile[data-value="8"]    { background: #f2b179; color: #f9f6f2; }
+    .tile[data-value="16"]   { background: #f59563; color: #f9f6f2; }
+    .tile[data-value="32"]   { background: #f67c5f; color: #f9f6f2; }
+    .tile[data-value="64"]   { background: #f65e3b; color: #f9f6f2; }
+    .tile[data-value="128"]  { background: #edcf72; color: #f9f6f2; }
+    .tile[data-value="256"]  { background: #edcc61; color: #f9f6f2; }
+    .tile[data-value="512"]  { background: #edc850; color: #f9f6f2; }
+    .tile[data-value="1024"] { background: #edc53f; color: #f9f6f2; }
+    .tile[data-value="2048"] { background: #edc22e; color: #f9f6f2; }
+    .tile[data-super]        { background: #3c3a32; color: #f9f6f2; }
+
+    /* =============================================
+       OVERLAY (Game Over / You Win)
+       ============================================= */
+    .board-overlay {
+      position: absolute;
+      inset: 0;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+      z-index: 200;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.28s ease;
+    }
+
+    .board-overlay.show {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .overlay-gameover { background: rgba(238, 228, 218, 0.75); }
+    .overlay-win      { background: rgba(237, 194, 46, 0.58); }
+
+    .overlay-msg {
+      font-size: clamp(30px, 8vw, 52px);
+      font-weight: 900;
+      color: #776e65;
+      text-align: center;
+    }
+
+    .overlay-win .overlay-msg {
+      color: #fff;
+      text-shadow: 0 1px 6px rgba(0,0,0,0.18);
+    }
+
+    .overlay-btns {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+      justify-content: center;
+    }
+
+    .overlay-btn {
+      background: #8f7a66;
+      color: #f9f6f2;
+      border: none;
+      border-radius: 6px;
+      padding: 10px 22px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    .overlay-btn:hover { background: #a08870; }
+    .overlay-btn.accent { background: #f65e3b; }
+    .overlay-btn.accent:hover { background: #f76e4d; }
+
+    /* =============================================
+       INSTRUCTIONS
+       ============================================= */
+    .instructions {
+      width: 100%;
+      max-width: 500px;
+      margin-top: 14px;
+      color: #776e65;
+      font-size: 13px;
+      line-height: 1.65;
+    }
+
+    /* =============================================
+       RESPONSIVE
+       ============================================= */
+    @media (max-width: 480px) {
+      body { padding: 10px 8px 40px; }
+      .score-box { min-width: 60px; padding: 5px 8px; }
+      .score-value { font-size: 17px; }
+      .btn { padding: 7px 10px; font-size: 12px; }
+      .board { padding: 8px; }
+      .cell-grid { inset: 8px; gap: 8px; }
+      .tile-container { inset: 8px; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- =============================================
+       HEADER
+       ============================================= -->
+  <header class="header">
+    <div class="title">2048</div>
+
+    <div class="header-right">
+      <div class="scores-container">
+        <div class="score-box">
+          <div class="score-label">Score</div>
+          <div class="score-value-wrap">
+            <span class="score-value" id="scoreVal">0</span>
+          </div>
+        </div>
+        <div class="score-box">
+          <div class="score-label">Best</div>
+          <div class="score-value-wrap">
+            <span class="score-value" id="bestVal">0</span>
+          </div>
+        </div>
+      </div>
+      <div class="buttons-container">
+        <button class="btn" id="btnNew">New Game</button>
+        <button class="btn" id="btnUndo" disabled>Undo</button>
+      </div>
+    </div>
+  </header>
+
+  <p class="subtitle">Join the tiles, get to <strong>2048!</strong></p>
+
+  <!-- =============================================
+       BOARD
+       ============================================= -->
+  <div class="board-wrapper">
+    <div class="board" id="board" role="grid" aria-label="2048 game board">
+      <div class="cell-grid" id="cellGrid" aria-hidden="true"></div>
+      <div class="tile-container" id="tileContainer"></div>
+    </div>
+
+    <!-- Game Over overlay -->
+    <div class="board-overlay overlay-gameover" id="overlayLose" role="alertdialog" aria-label="Game Over">
+      <div class="overlay-msg">Game Over!</div>
+      <div class="overlay-btns">
+        <button class="overlay-btn accent" id="btnRestartLose">Try Again</button>
+      </div>
+    </div>
+
+    <!-- Win overlay -->
+    <div class="board-overlay overlay-win" id="overlayWin" role="alertdialog" aria-label="You Win">
+      <div class="overlay-msg">You Win! 🎉</div>
+      <div class="overlay-btns">
+        <button class="overlay-btn" id="btnContinue">Continue</button>
+        <button class="overlay-btn accent" id="btnRestartWin">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="instructions">
+    <strong>How to play:</strong> Arrow keys or WASD to move tiles.
+    Swipe on mobile. Same numbers merge — reach 2048!
+  </div>
+
+  <!-- =============================================
+       JAVASCRIPT
+       ============================================= -->
+  <script>
+  'use strict';
+
+  /* =====================================================
+     § 1  CONSTANTS
+     ===================================================== */
+  const GRID          = 4;
+  const PROB_TWO      = 0.9;      // 90 % chance of spawning a 2
+  const WIN_TILE      = 2048;
+  const UNDO_LIMIT    = 20;
+  const MOVE_MS       = 200;      // tile slide duration (must match CSS)
+  const POP_MS        = 150;      // merge pop duration
+  const SWIPE_THRESH  = 30;       // px minimum for a swipe to register
+  const LS_BEST       = 'g2048best';
+  // GAP is read dynamically from the container to handle responsive layouts
+  // (CSS uses 12px on desktop, 8px on mobile)
+  const getGap = container => {
+    const style = getComputedStyle(container);
+    // `gap` shorthand may resolve inconsistently; try multiple properties
+    const g = parseFloat(style.gap || style.rowGap || style.gridRowGap || '12');
+    return isNaN(g) ? 12 : g;
+  };
+
+  /* =====================================================
+     § 2  GAME LOGIC  (pure functions, zero DOM access)
+     ===================================================== */
+  const Logic = (() => {
+
+    /** Create a blank GRID×GRID board filled with 0 */
+    const blank = () =>
+      Array.from({ length: GRID }, () => new Array(GRID).fill(0));
+
+    /** Deep-copy a 2-D board */
+    const copy  = b => b.map(r => r.slice());
+
+    /** All {r,c} positions where board[r][c] === 0 */
+    const empty = b => {
+      const out = [];
+      for (let r = 0; r < GRID; r++)
+        for (let c = 0; c < GRID; c++)
+          if (b[r][c] === 0) out.push({ r, c });
+      return out;
+    };
+
+    /**
+     * Spawn one tile into `board` (mutates it).
+     * Returns {r, c, value} or null if board is full.
+     */
+    const spawn = b => {
+      const cells = empty(b);
+      if (!cells.length) return null;
+      const pos   = cells[Math.floor(Math.random() * cells.length)];
+      const val   = Math.random() < PROB_TWO ? 2 : 4;
+      b[pos.r][pos.c] = val;
+      return { r: pos.r, c: pos.c, value: val };
+    };
+
+    /* --------------------------------------------------
+       MERGE — the heart of 2048
+       All four directions are handled by the same algorithm
+       via transpose / reverse transforms applied to the board
+       before and after a left-merge pass.
+
+       mergeLine(line):
+         1. Strip zeros → compact array.
+         2. Walk left-to-right; if cell[i] === cell[i+1], merge them
+            (each cell merges AT MOST ONCE — advance i by 2).
+         3. Re-pad to GRID length with zeros.
+
+       Returns { result, score, mergedAt }
+         result   – merged line
+         score    – points earned in this line
+         mergedAt – Set of result-indices produced by a merge
+    -------------------------------------------------- */
+    const mergeLine = line => {
+      const pack     = line.filter(v => v !== 0);
+      const result   = [];
+      const mergedAt = new Set();
+      let score      = 0;
+      let i          = 0;
+
+      while (i < pack.length) {
+        if (i + 1 < pack.length && pack[i] === pack[i + 1]) {
+          const v = pack[i] * 2;
+          mergedAt.add(result.length);
+          result.push(v);
+          score += v;
+          i += 2;
+        } else {
+          result.push(pack[i++]);
+        }
+      }
+      while (result.length < GRID) result.push(0);
+      return { result, score, mergedAt };
+    };
+
+    /** Transpose a square 2-D array */
+    const transpose = g => g.map((r, i) => r.map((_, j) => g[j][i]));
+
+    /**
+     * Apply one move to `board`.
+     * Returns { board, score, moved, mergeFlags }
+     *   board      – new board state
+     *   score      – total points earned
+     *   moved      – true if any tile changed position / merged
+     *   mergeFlags – boolean[GRID][GRID]:
+     *                true  → that cell in the new board is the result of a merge
+     */
+    const applyMove = (board, dir) => {
+      const rev  = dir === 'right' || dir === 'down';
+      const trns = dir === 'up'    || dir === 'down';
+
+      let g = copy(board);
+      if (trns) g = transpose(g);
+      if (rev)  g = g.map(r => r.slice().reverse());
+
+      let score     = 0;
+      let moved     = false;
+      const flags   = blank(); // will hold merge flags
+
+      for (let r = 0; r < GRID; r++) {
+        const { result, score: s, mergedAt } = mergeLine(g[r]);
+        for (let c = 0; c < GRID; c++)
+          if (g[r][c] !== result[c]) moved = true;
+        g[r] = result;
+        score += s;
+        mergedAt.forEach(c => { flags[r][c] = 1; });
+      }
+
+      // Undo transforms
+      if (rev)  g     = g.map(r => r.slice().reverse());
+      if (trns) g     = transpose(g);
+
+      // Also un-transform the flag grid
+      let f = flags;
+      if (rev)  f = f.map(r => r.slice().reverse());
+      if (trns) f = transpose(f);
+
+      return { board: g, score, moved, mergeFlags: f };
+    };
+
+    /** True if the board has at least one legal move remaining */
+    const canMove = b => {
+      if (empty(b).length) return true;
+      for (let r = 0; r < GRID; r++)
+        for (let c = 0; c < GRID; c++) {
+          if (c + 1 < GRID && b[r][c] === b[r][c + 1]) return true;
+          if (r + 1 < GRID && b[r][c] === b[r + 1][c]) return true;
+        }
+      return false;
+    };
+
+    /** True if board contains WIN_TILE */
+    const hasWon = b => b.some(r => r.some(v => v === WIN_TILE));
+
+    /**
+     * Compute tile movement trajectories for animation.
+     *
+     * Replays the exact merge algorithm while tracking each
+     * tile's (fromR, fromC) → (toR, toC) path.
+     *
+     * Returns an array of trajectory objects:
+     *   { fromR, fromC, toR, toC, value, isMerge, isGhost }
+     *
+     *   isMerge  – the tile at (toR,toC) is the product of a merge
+     *   isGhost  – a "shadow" entry for the second tile in a merge pair;
+     *              it travels to the same destination and then disappears
+     */
+    const trajectories = (board, dir) => {
+      const rev  = dir === 'right' || dir === 'down';
+      const trns = dir === 'up'    || dir === 'down';
+
+      // Build cell-object grid: { value, origR, origC }
+      let cells = Array.from({ length: GRID }, (_, r) =>
+        Array.from({ length: GRID }, (__, c) => ({ value: board[r][c], origR: r, origC: c }))
+      );
+
+      if (trns) cells = transpose(cells);
+      if (rev)  cells = cells.map(row => row.slice().reverse());
+
+      const out = [];
+
+      for (let r = 0; r < GRID; r++) {
+        const row     = cells[r];
+        const compact = row.filter(cell => cell.value !== 0);
+        let destCol   = 0;
+
+        let i = 0;
+        while (i < compact.length) {
+          const a = compact[i];
+
+          if (i + 1 < compact.length && a.value === compact[i + 1].value) {
+            const b    = compact[i + 1];
+            const [dr, dc] = unTransform(r, destCol, rev, trns);
+            // Winner tile (keeps value * 2)
+            out.push({ fromR: a.origR, fromC: a.origC,
+                       toR: dr, toC: dc,
+                       value: a.value * 2, isMerge: true, isGhost: false });
+            // Ghost tile (travels to same spot, then vanishes)
+            out.push({ fromR: b.origR, fromC: b.origC,
+                       toR: dr, toC: dc,
+                       value: b.value, isMerge: false, isGhost: true });
+            i += 2;
+          } else {
+            const [dr, dc] = unTransform(r, destCol, rev, trns);
+            out.push({ fromR: a.origR, fromC: a.origC,
+                       toR: dr, toC: dc,
+                       value: a.value, isMerge: false, isGhost: false });
+            i++;
+          }
+          destCol++;
+        }
+      }
+      return out;
+    };
+
+    /** Convert a (row, col) in the transformed grid back to original coords */
+    const unTransform = (r, c, rev, trns) => {
+      let or = r, oc = c;
+      if (rev)  oc = (GRID - 1) - oc;
+      if (trns) [or, oc] = [oc, or];
+      return [or, oc];
+    };
+
+    return { blank, copy, spawn, applyMove, canMove, hasWon, trajectories };
+  })();
+
+
+  /* =====================================================
+     § 3  GAME STATE  (mutable state + undo stack)
+     ===================================================== */
+  const State = (() => {
+    let board     = [];
+    let score     = 0;
+    let best      = 0;
+    let won       = false;  // true once player has reached 2048 this game
+    let wincont   = false;  // true once player clicked "Continue" (don't show overlay again)
+    let over      = false;
+
+    /**
+     * UNDO STACK — each entry is { board, score }.
+     * Capped at UNDO_LIMIT. pushUndo() discards the
+     * oldest state when the limit is exceeded.
+     */
+    let undoStack = [];
+
+    const pushUndo = () => {
+      if (undoStack.length >= UNDO_LIMIT) undoStack.shift(); // drop oldest
+      undoStack.push({ board: Logic.copy(board), score });
+    };
+
+    const loadBest = () => {
+      const n = parseInt(localStorage.getItem(LS_BEST), 10);
+      best = isNaN(n) ? 0 : n;
+    };
+
+    const saveBest = () => localStorage.setItem(LS_BEST, String(best));
+
+    const newGame = () => {
+      board     = Logic.blank();
+      score     = 0;
+      won       = false;
+      wincont   = false;
+      over      = false;
+      undoStack = [];       // free old references
+      Logic.spawn(board);
+      Logic.spawn(board);
+    };
+
+    /**
+     * Apply a directional move.
+     * Returns result object or null (if board didn't change).
+     */
+    const move = dir => {
+      if (over) return null;
+
+      const prev = Logic.copy(board);
+      const res  = Logic.applyMove(board, dir);
+      if (!res.moved) return null;
+
+      pushUndo();
+
+      board  = res.board;
+      score += res.score;
+      if (score > best) { best = score; saveBest(); }
+
+      const newTile = Logic.spawn(board);
+
+      // Win detection: show overlay only on the first time 2048 is reached,
+      // and only if the player hasn't already clicked "Continue" (wincont).
+      const justWon = !won && !wincont && Logic.hasWon(board);
+      if (justWon) won = true;
+
+      if (!Logic.canMove(board)) over = true;
+
+      return {
+        prevBoard:  prev,
+        newBoard:   board,
+        scoreGained: res.score,
+        mergeFlags: res.mergeFlags,
+        newTile,
+        showWin:    justWon,
+        over,
+      };
+    };
+
+    /** Revert to the previous state. Returns { board, score } or null. */
+    const undo = () => {
+      if (!undoStack.length) return null;
+      const snap = undoStack.pop();
+      board = snap.board;
+      score = snap.score;
+      over  = false;
+      return { board, score };
+    };
+
+    // Player chose "Continue" — set wincont so the win overlay never
+    // reappears in this session, even if more 2048 tiles are reached.
+    const acknowledgeWin = () => { wincont = true; won = true; };
+
+    // Getters
+    const getBoard  = () => board;
+    const getScore  = () => score;
+    const getBest   = () => best;
+    const isOver    = () => over;
+    const canUndo   = () => undoStack.length > 0;
+
+    return { loadBest, newGame, move, undo, acknowledgeWin,
+             getBoard, getScore, getBest, isOver, canUndo };
+  })();
+
+
+  /* =====================================================
+     § 4  RENDERER  (DOM writes, no game logic)
+     ===================================================== */
+  const Render = (() => {
+
+    const elScore    = document.getElementById('scoreVal');
+    const elBest     = document.getElementById('bestVal');
+    const elTiles    = document.getElementById('tileContainer');
+    const elGrid     = document.getElementById('cellGrid');
+    const elLose     = document.getElementById('overlayLose');
+    const elWin      = document.getElementById('overlayWin');
+
+    /* --- Ghost grid (built once at startup) --- */
+    const buildGrid = () => {
+      const frag = document.createDocumentFragment();
+      for (let i = 0; i < GRID * GRID; i++) {
+        const d = document.createElement('div');
+        d.className = 'ghost-cell';
+        frag.appendChild(d);
+      }
+      elGrid.appendChild(frag);
+    };
+
+    /* --- Tile helpers --- */
+
+    /**
+     * Convert data value → CSS attribute value.
+     * Values above 2048 use the [data-super] attribute.
+     */
+    const dataAttr = v => (v <= 2048 ? String(v) : null);
+
+    /** Font-size scaling so large numbers fit inside the tile */
+    const fontSize = v => {
+      const d = String(v).length;
+      if (d <= 2) return '2.2em';
+      if (d === 3) return '1.7em';
+      if (d === 4) return '1.28em';
+      return '0.95em';
+    };
+
+    /**
+     * Compute the CSS left / top / width / height for a tile at (r, c).
+     * Uses CSS calc() so it adapts to any container size automatically.
+     * The gap value is read from the live cell-grid element so it matches
+     * the responsive CSS (12 px on desktop, 8 px on mobile).
+     *
+     * Formula:
+     *   cellSize = (100% - (GRID-1)*gap) / GRID
+     *   offset_i = i * cellSize + i * gap
+     */
+    const tilePos = (r, c) => {
+      // Read gap from the live CSS grid element so responsive layouts are handled.
+      // `gap` shorthand may not be supported in all browsers; fall back to row-gap.
+      const _gs = getComputedStyle(elGrid);
+      const g   = parseFloat(_gs.gap || _gs.rowGap || _gs.gridRowGap) || 12;
+      const n   = GRID;
+      const sz  = `(100% - ${(n - 1) * g}px) / ${n}`;
+      const ofs = (i) => `calc(${i} * (${sz}) + ${i * g}px)`;
+      return {
+        width:  `calc(${sz})`,
+        height: `calc(${sz})`,
+        left:   ofs(c),
+        top:    ofs(r),
+      };
+    };
+
+    /**
+     * Create a tile DOM element.
+     *   value      – tile number
+     *   r, c       – board position
+     *   extraClass – optional extra CSS class string
+     */
+    const makeTile = (value, r, c, extraClass = '') => {
+      const el = document.createElement('div');
+      el.className = 'tile' + (extraClass ? ' ' + extraClass : '');
+
+      const da = dataAttr(value);
+      if (da) el.setAttribute('data-value', da);
+      else    el.setAttribute('data-super', '');
+
+      el.style.fontSize = fontSize(value);
+      el.textContent    = value;
+
+      const p = tilePos(r, c);
+      el.style.width  = p.width;
+      el.style.height = p.height;
+      el.style.left   = p.left;
+      el.style.top    = p.top;
+
+      return el;
+    };
+
+    /* --- Full board render (no animation) --- */
+    const renderStatic = board => {
+      const frag = document.createDocumentFragment();
+      for (let r = 0; r < GRID; r++)
+        for (let c = 0; c < GRID; c++)
+          if (board[r][c]) frag.appendChild(makeTile(board[r][c], r, c));
+      elTiles.innerHTML = '';
+      elTiles.appendChild(frag);
+    };
+
+    /* --- Score update with optional floating +N indicator --- */
+    const renderScores = (score, best, gained) => {
+      elScore.textContent = score;
+      elBest.textContent  = best;
+
+      if (gained > 0) {
+        // Find the score-value-wrap that contains elScore
+        const wrap = elScore.parentElement;
+        const old  = wrap.querySelector('.score-add');
+        if (old) old.remove();
+
+        const el = document.createElement('span');
+        el.className   = 'score-add';
+        el.textContent = `+${gained}`;
+        wrap.appendChild(el);
+        el.addEventListener('animationend', () => el.remove(), { once: true });
+      }
+    };
+
+    /* --- Overlay control --- */
+    const showOverlay = type => {
+      elLose.classList.remove('show');
+      elWin.classList.remove('show');
+      if (type === 'lose') elLose.classList.add('show');
+      if (type === 'win')  elWin.classList.add('show');
+    };
+
+    const hideOverlays = () => {
+      elLose.classList.remove('show');
+      elWin.classList.remove('show');
+    };
+
+    return { buildGrid, renderStatic, renderScores,
+             showOverlay, hideOverlays, makeTile, tilePos };
+  })();
+
+
+  /* =====================================================
+     § 5  ANIMATION CONTROLLER
+     ===================================================== */
+  /*
+     STRATEGY — FLIP-inspired approach with explicit pixel offsets:
+
+     When a move is applied we receive a list of "trajectories":
+       { fromR, fromC, toR, toC, value, isMerge, isGhost }
+
+     For each trajectory we:
+       1.  Create the tile DOM element at its FINAL (toR, toC) position.
+       2.  IMMEDIATELY (before browser paints) set transform to the
+           NEGATIVE of (toPos − fromPos), effectively placing it visually
+           at (fromR, fromC).
+       3.  Force a style recalculation (reading offsetWidth / getBoundingClientRect
+           only ONCE on the container, NOT per-tile).
+       4.  In the NEXT rAF, set transform back to translate3d(0,0,0).
+           The CSS transition on `.tile` animates it smoothly.
+       5.  Listen to `transitionend` on every animated tile;
+           when ALL have finished, spawn the new tile and call onDone().
+
+     Ghost tiles (the "losing" half of a merge pair) are rendered
+     beneath the winner tile (z-index 1 vs 2). They slide to the
+     same spot. After transitions end, ghosts are removed.
+
+     Pop animation: merge-winner tiles get `.tile-pop` after
+     the slide transition completes (inline style cleared first
+     so the CSS animation property takes effect cleanly).
+
+     Performance notes:
+       •  PHASE 1 (READ)  – measure container once via getBoundingClientRect.
+       •  PHASE 2 (WRITE) – build DocumentFragment, set initial transforms,
+                            append in ONE operation.
+       •  rAF pair used (not setTimeout) to guarantee layout flush between
+          the initial-transform write and the final-transform write.
+       •  will-change: transform is already in the CSS rule (always on).
+  */
+  const Anim = (() => {
+
+    let busy   = false;  // true while a move animation is in progress
+    const isBusy = () => busy;
+
+    /**
+     * Animate a complete move.
+     *
+     * @param {Array}               trajs    trajectory list from Logic.trajectories()
+     * @param {{r,c,value}|null}   newTile  spawned tile (added after all animations)
+     * @param {function}            onDone   called when all animations + spawn complete
+     */
+    const run = (trajs, newTile, onDone) => {
+      busy = true;
+
+      const container = document.getElementById('tileContainer');
+
+      /* ---- PHASE 1 (READ) ------------------------------------------ */
+      // Measure container once — we'll compute pixel displacements from this.
+      // Also read gap from the live CSS grid so responsive layouts are handled.
+      const cw  = container.offsetWidth;
+      const ch  = container.offsetHeight;
+      const gap = getGap(document.getElementById('cellGrid'));
+
+      // Pre-compute cell top-left pixel coordinates for every (r,c)
+      const cellW = (cw - gap * (GRID - 1)) / GRID;
+      const cellH = (ch - gap * (GRID - 1)) / GRID;
+
+      const px = (r, c) => ({
+        x: c * (cellW + gap),   // left edge of cell
+        y: r * (cellH + gap),   // top  edge of cell
+      });
+
+      /* ---- PHASE 2 (WRITE) ----------------------------------------- */
+      // Build all tile elements in a fragment; set initial displaced transforms.
+      const frag = document.createDocumentFragment();
+
+      // Tiles that need slide animation: { el, dx, dy, isMerge, isGhost }
+      const slidingTiles = [];
+
+      // Tiles at their final position with no movement (untouched tiles
+      // whose from === to are still rendered but don't need transition).
+      // We still need to include them so the board looks correct.
+
+      // Track merge-winner tiles that are NOT moving (need pop animation after ghost slides away)
+      const staticMergeTiles = [];
+
+      trajs.forEach(t => {
+        const el = Render.makeTile(
+          t.value,
+          t.toR,
+          t.toC,
+          t.isGhost ? 'tile-ghost' : ''
+        );
+
+        // Ghost tiles sit below merge winners visually
+        if (t.isGhost) {
+          el.style.zIndex = '1';
+        } else if (t.isMerge) {
+          el.style.zIndex = '2';
+        }
+
+        const from = px(t.fromR, t.fromC);
+        const to   = px(t.toR,   t.toC);
+        const dx   = from.x - to.x;
+        const dy   = from.y - to.y;
+
+        if (dx !== 0 || dy !== 0) {
+          // Place tile visually at FROM position (disable transition temporarily)
+          el.style.transition = 'none';
+          el.style.transform  = `translate3d(${dx}px, ${dy}px, 0)`;
+          slidingTiles.push({ el, isMerge: t.isMerge, isGhost: t.isGhost });
+        } else if (t.isMerge) {
+          // Merge winner that didn't move — pop animation triggered after ghosts finish
+          staticMergeTiles.push(el);
+        }
+        // Non-merge, non-moving tile: just sits there, no action needed
+
+        frag.appendChild(el);
+      });
+
+      // Single DOM write: clear old tiles, add all new ones at once
+      container.innerHTML = '';
+      container.appendChild(frag);
+
+      // If nothing is actually sliding, skip directly to post-slide phase
+      if (slidingTiles.length === 0) {
+        _afterSlide(container, newTile, staticMergeTiles, onDone);
+        return;
+      }
+
+      /* ---- PHASE 3: trigger animations (rAF × 2 for layout flush) --- */
+      /*
+         Why two rAFs?
+         The first rAF runs BEFORE the browser's style/layout pass for
+         this frame — the "transition: none" and displaced transform are
+         written but the browser has not yet resolved them into a style.
+         The second rAF runs AFTER that pass, so the initial transform IS
+         committed. Now setting the final transform triggers the CSS transition.
+      */
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          let remaining = slidingTiles.length;
+
+          slidingTiles.forEach(({ el, isMerge, isGhost }) => {
+            // Restore CSS transition and animate to final position
+            el.style.transition = `transform ${MOVE_MS}ms cubic-bezier(0.25, 0.1, 0.25, 1)`;
+            el.style.transform  = 'translate3d(0, 0, 0)';
+
+            el.addEventListener('transitionend', function te(e) {
+              if (e.propertyName !== 'transform') return;
+              el.removeEventListener('transitionend', te);
+
+              // Clear the inline transition so animations can run freely
+              el.style.transition = '';
+
+              if (isGhost) {
+                // Ghost tiles are no longer needed after slide
+                el.remove();
+              } else if (isMerge) {
+                // Apply pop animation to merge winner
+                el.classList.add('tile-pop');
+                el.addEventListener('animationend', () => {
+                  el.classList.remove('tile-pop');
+                }, { once: true });
+              }
+
+              remaining--;
+              if (remaining === 0) {
+                _afterSlide(container, newTile, staticMergeTiles, onDone);
+              }
+            }, { once: true });
+          });
+        });
+      });
+    };
+
+    /**
+     * Called after all slide transitions finish.
+     * Applies pop animation to any merge-winner tiles (both sliding ones
+     * whose transitionend fired, and static ones that never moved).
+     * Then spawns the new tile and calls onDone().
+     */
+    const _afterSlide = (container, newTile, staticMergeTiles, onDone) => {
+      // Pop all static (non-moving) merge tiles
+      staticMergeTiles.forEach(el => {
+        el.classList.add('tile-pop');
+        el.addEventListener('animationend', () => el.classList.remove('tile-pop'), { once: true });
+      });
+
+      if (newTile) {
+        // Spawn tile appears with scale animation
+        const el = Render.makeTile(newTile.value, newTile.r, newTile.c, 'tile-new');
+        container.appendChild(el);
+      }
+      busy = false;
+      if (onDone) onDone();
+    };
+
+    return { isBusy, run };
+  })();
+
+
+  /* =====================================================
+     § 6  EVENT HANDLER
+     ===================================================== */
+  const Input = (() => {
+
+    const KEY_DIR = {
+      ArrowLeft: 'left',  ArrowRight: 'right',
+      ArrowUp:   'up',    ArrowDown:  'down',
+      a: 'left', d: 'right', w: 'up', s: 'down',
+      A: 'left', D: 'right', W: 'up', S: 'down',
+    };
+
+    let touchX0 = 0, touchY0 = 0;
+
+    // Undo debounce
+    let lastUndoAt  = 0;
+    const UNDO_WAIT = 280; // ms
+
+    /* --- Core: handle a directional move --- */
+    const doMove = dir => {
+      if (Anim.isBusy())   return;  // wait for current animation
+      if (State.isOver())  return;
+
+      // Snapshot board BEFORE the move — needed for trajectory computation
+      const prevBoard = State.getBoard().map(r => r.slice());
+      const result    = State.move(dir);
+      if (!result) return;  // board unchanged
+
+      // Compute movement trajectories from the pre-move snapshot
+      // so we know exactly where each tile came from
+      const trajs = Logic.trajectories(prevBoard, dir);
+
+      // Update scores immediately (text content — no reflow)
+      Render.renderScores(State.getScore(), State.getBest(), result.scoreGained);
+      _updateUndoBtn();
+
+      // Run the animation; after it completes, show overlays if needed
+      Anim.run(
+        trajs,
+        result.newTile,
+        () => {
+          _updateUndoBtn();
+          if (result.showWin) {
+            Render.showOverlay('win');
+          } else if (result.over) {
+            Render.showOverlay('lose');
+          }
+        }
+      );
+    };
+
+    /* --- New game --- */
+    const doNewGame = () => {
+      State.newGame();
+      Render.hideOverlays();
+      Render.renderStatic(State.getBoard());
+      Render.renderScores(State.getScore(), State.getBest(), 0);
+      _updateUndoBtn();
+    };
+
+    /* --- Undo --- */
+    const doUndo = () => {
+      const now = Date.now();
+      if (now - lastUndoAt < UNDO_WAIT) return;  // debounce
+      if (Anim.isBusy()) return;                  // wait for animation
+      lastUndoAt = now;
+
+      const snap = State.undo();
+      if (!snap) return;
+
+      Render.hideOverlays();
+      Render.renderStatic(snap.board);
+      Render.renderScores(snap.score, State.getBest(), 0);
+      _updateUndoBtn();
+    };
+
+    const _updateUndoBtn = () => {
+      document.getElementById('btnUndo').disabled = !State.canUndo();
+    };
+
+    /* --- Keyboard --- */
+    const onKey = e => {
+      const dir = KEY_DIR[e.key];
+      if (!dir) return;
+      e.preventDefault();  // stop arrow-key page scroll
+      doMove(dir);
+    };
+
+    /* --- Touch --- */
+    const onTouchStart = e => {
+      if (e.touches.length !== 1) return;
+      touchX0 = e.touches[0].clientX;
+      touchY0 = e.touches[0].clientY;
+    };
+
+    const onTouchEnd = e => {
+      if (e.changedTouches.length !== 1) return;
+      const dx = e.changedTouches[0].clientX - touchX0;
+      const dy = e.changedTouches[0].clientY - touchY0;
+      const ax = Math.abs(dx), ay = Math.abs(dy);
+      if (Math.max(ax, ay) < SWIPE_THRESH) return;
+      doMove(ax > ay ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up'));
+    };
+
+    /* Prevent page scroll while swiping inside the board */
+    const onTouchMove = e => e.preventDefault();
+
+    /* --- Wire up all listeners --- */
+    const init = () => {
+      document.addEventListener('keydown', onKey);
+
+      const board = document.getElementById('board');
+      board.addEventListener('touchstart', onTouchStart, { passive: true });
+      board.addEventListener('touchend',   onTouchEnd,   { passive: true });
+      board.addEventListener('touchmove',  onTouchMove,  { passive: false });
+
+      document.getElementById('btnNew').addEventListener('click', doNewGame);
+      document.getElementById('btnUndo').addEventListener('click', doUndo);
+
+      document.getElementById('btnContinue').addEventListener('click', () => {
+        State.acknowledgeWin();
+        Render.hideOverlays();
+      });
+      document.getElementById('btnRestartWin').addEventListener('click',  doNewGame);
+      document.getElementById('btnRestartLose').addEventListener('click', doNewGame);
+    };
+
+    return { init };
+  })();
+
+
+  /* =====================================================
+     § 7  BOOT
+     ===================================================== */
+  (() => {
+    Render.buildGrid();   // build ghost cell grid (runs once)
+    State.loadBest();     // restore best score from localStorage
+    State.newGame();      // initialise board + 2 random tiles
+
+    Render.renderStatic(State.getBoard());
+    Render.renderScores(State.getScore(), State.getBest(), 0);
+
+    Input.init();         // wire up all event listeners
+  })();
+
+  </script>
+</body>
+</html>
